@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id       Int      @id
+  name     String   @db.Text
+  parentId Int?
+  offers   Offer[]
+}
+
+model Offer {
+  id               Int       @id
+  name             String?   @db.Text
+  nameUa           String?   @db.Text
+  price            Float?
+  currencyId       String?   @db.VarChar(10)
+  vendor           String?   @db.VarChar(100)
+  barcode          String?   @db.VarChar(100)
+  description      String?   @db.LongText
+  descriptionUa    String?   @db.LongText
+  ean              String?   @db.VarChar(100)
+  quantityInStock  Int?
+  categoryId       Int?
+  category         Category? @relation(fields: [categoryId], references: [id])
+  params           Param[]
+  pictures         Picture[]
+  updatedAt        DateTime  @updatedAt
+}
+
+model Param {
+  id       Int     @id @default(autoincrement())
+  name     String  @db.VarChar(255)
+  value    String  @db.Text
+  offerId  Int
+  offer    Offer   @relation(fields: [offerId], references: [id])
+}
+
+model Picture {
+  id       Int     @id @default(autoincrement())
+  url      String  @db.Text
+  offerId  Int
+  offer    Offer   @relation(fields: [offerId], references: [id])
+}
+
+
+// $ npx prisma migrate dev --name updated-fields
+// $ npx prisma generate
+// $ npx prisma db push
