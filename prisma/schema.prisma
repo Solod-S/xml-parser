@@ -15,39 +15,102 @@ model Category {
 }
 
 model Offer {
-  id               Int       @id
-  name             String?   @db.Text
-  nameUa           String?   @db.Text
+  id               Int      @id
+  name             String?  @db.Text
+  nameUa           String?  @db.Text
   price            Float?
-  currencyId       String?   @db.VarChar(10)
-  vendor           String?   @db.VarChar(100)
-  barcode          String?   @db.VarChar(100)
-  description      String?   @db.LongText
-  descriptionUa    String?   @db.LongText
-  ean              String?   @db.VarChar(100)
+  currencyId       String?  @db.VarChar(10)
+  vendor           String?  @db.VarChar(100)
+  barcode          String?  @db.VarChar(100)
+  description      String?  @db.LongText
+  descriptionUa    String?  @db.LongText
+  ean              String?  @db.VarChar(100)
   quantityInStock  Int?
   categoryId       Int?
   category         Category? @relation(fields: [categoryId], references: [id])
-  params           Param[]
   pictures         Picture[]
-  updatedAt        DateTime  @updatedAt
-}
 
-model Param {
-  id       Int     @id @default(autoincrement())
-  name     String  @db.VarChar(255)
-  value    String  @db.Text
-  offerId  Int
-  offer    Offer   @relation(fields: [offerId], references: [id])
+  brandId              Int?
+  compatibleBrandId    Int?
+  compatibleDevicesId  Int?
+  typeId               Int?
+  surfaceId            Int?
+  viewId               Int?
+  formFactorId         Int?
+  materialId           Int?
+  colorId              Int?
+
+  brand                Brand?             @relation(fields: [brandId], references: [id])
+  compatibleBrand      CompatibleBrand?   @relation(fields: [compatibleBrandId], references: [id])
+  compatibleDevices    CompatibleDevices? @relation(fields: [compatibleDevicesId], references: [id])
+  type                 Type?              @relation(fields: [typeId], references: [id])
+  surface              Surface?           @relation(fields: [surfaceId], references: [id])
+  view                 View?              @relation(fields: [viewId], references: [id])
+  formFactor           FormFactor?        @relation(fields: [formFactorId], references: [id])
+  material             Material?          @relation(fields: [materialId], references: [id])
+  color                Color?             @relation(fields: [colorId], references: [id])
 }
 
 model Picture {
-  id       Int     @id @default(autoincrement())
-  url      String  @db.Text
-  offerId  Int
-  offer    Offer   @relation(fields: [offerId], references: [id])
+  id      Int    @id @default(autoincrement())
+  url     String @db.Text 
+  offerId Int
+  offer   Offer  @relation(fields: [offerId], references: [id])
 }
 
+model Brand {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model CompatibleBrand {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model CompatibleDevices {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model Type {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model Surface {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model View {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model FormFactor {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model Material {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
+
+model Color {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique @db.VarChar(767)
+  offers Offer[]
+}
 
 // $ npx prisma migrate dev --name updated-fields
 // $ npx prisma generate

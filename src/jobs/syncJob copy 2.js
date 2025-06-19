@@ -95,52 +95,53 @@ async function sync() {
   }
 
   // Офферы
-  // Офферы (последовательно, без Promise.all)
   for (let i = 0; i < offers.length; i += BATCH_SIZE) {
     const batch = offers.slice(i, i + BATCH_SIZE);
-    for (const offer of batch) {
-      const id = parseInt(offer.$.id);
-      const categoryId = parseInt(offer.categoryId);
-      if (isNaN(categoryId)) continue;
+    await Promise.all(
+      batch.map(async offer => {
+        const id = parseInt(offer.$.id);
+        const categoryId = parseInt(offer.categoryId);
+        if (isNaN(categoryId)) return;
 
-      const attrRefs = {};
-      const params = Array.isArray(offer.param) ? offer.param : [offer.param];
+        const attrRefs = {};
+        const params = Array.isArray(offer.param) ? offer.param : [offer.param];
 
-      for (const p of params) {
-        if (!p?.$?.name || !p._) continue;
-        const match = PARAM_MODELS[p.$.name];
-        if (match) {
-          const attrId = await getOrCreate(match.model, p._);
-          if (attrId) attrRefs[match.field] = attrId;
+        for (const p of params) {
+          if (!p?.$?.name || !p._) continue;
+          const match = PARAM_MODELS[p.$.name];
+          if (match) {
+            const attrId = await getOrCreate(match.model, p._);
+            if (attrId) attrRefs[match.field] = attrId;
+          }
         }
-      }
 
-      await prisma.offer.create({
-        data: {
-          id,
-          name: offer.name,
-          nameUa: offer.name_ua,
-          price: parseFloat(offer.price),
-          currencyId: offer.currencyId,
-          vendor: offer.vendor,
-          barcode: offer.barcode,
-          description: offer.description,
-          descriptionUa: offer.description_ua,
-          ean: offer.EAN,
-          quantityInStock: parseInt(offer.quantity_in_stock || "0"),
-          categoryId,
-          ...attrRefs,
-        },
-      });
+        await prisma.offer.create({
+          data: {
+            id,
+            name: offer.name,
+            nameUa: offer.name_ua,
+            price: parseFloat(offer.price),
+            currencyId: offer.currencyId,
+            vendor: offer.vendor,
+            barcode: offer.barcode,
+            description: offer.description,
+            descriptionUa: offer.description_ua,
+            ean: offer.EAN,
+            quantityInStock: parseInt(offer.quantity_in_stock || "0"),
+            categoryId,
+            ...attrRefs,
+          },
+        });
 
-      const pictures = Array.isArray(offer.picture)
-        ? offer.picture
-        : [offer.picture];
+        const pictures = Array.isArray(offer.picture)
+          ? offer.picture
+          : [offer.picture];
 
-      for (const url of pictures.filter(Boolean)) {
-        await prisma.picture.create({ data: { url, offerId: id } });
-      }
-    }
+        for (const url of pictures.filter(Boolean)) {
+          await prisma.picture.create({ data: { url, offerId: id } });
+        }
+      })
+    );
 
     const percent = Math.round(((i + BATCH_SIZE) / offers.length) * 100);
     console.log(

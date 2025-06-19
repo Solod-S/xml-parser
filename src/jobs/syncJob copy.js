@@ -3,17 +3,17 @@ const prisma = new PrismaClient();
 const { fetchXML, saveJSON } = require("../utils/xmlParser");
 const xmlUrl = process.env.XML_FEED_URL;
 
+const BATCH_SIZE = 20;
+
 async function sync() {
   console.log("🔄 Starting XML sync...");
 
-  // Получаем XML
+  // 1. Получаем XML
   console.log("📡 Fetching XML feed...");
   const xml = await fetchXML(xmlUrl);
   console.log("📁 Saving XML as JSON for debug...");
   saveJSON(xml);
 
-  // Обрабатываем категории
-  console.log("📂 Parsing categories...");
   const categories = Array.isArray(xml.yml_catalog.shop.categories.category)
     ? xml.yml_catalog.shop.categories.category
     : [xml.yml_catalog.shop.categories.category];
@@ -22,10 +22,18 @@ async function sync() {
     ? xml.yml_catalog.shop.offers.offer
     : [xml.yml_catalog.shop.offers.offer];
 
-  console.log(`🧹 Clearing ${categories.length} old categories...`);
-  await prisma.category.deleteMany();
+  // 2. Удаление зависимостей офферов
+  console.log("🧹 Clearing old offers (params, pictures, offers)...");
+  await prisma.picture.deleteMany();
+  await prisma.param.deleteMany();
+  await prisma.offer.deleteMany();
+  console.log("✅ Offers cleared.");
 
-  for (const category of categories) {
+  // 3. Обработка категорий
+  console.log(`🧹 Deleting ${categories.length} categories...`);
+  await prisma.category.deleteMany();
+  for (let i = 0; i < categories.length; i++) {
+    const category = categories[i];
     await prisma.category.create({
       data: {
         id: parseInt(category.$.id),
@@ -33,95 +41,91 @@ async function sync() {
         parentId: category.$.parentId ? parseInt(category.$.parentId) : null,
       },
     });
+    const percent = Math.floor(((i + 1) / categories.length) * 100);
+    console.log(`📂 Category ${i + 1}/${categories.length} (${percent}%)`);
   }
-  console.log(`✅ Categories synced: ${categories.length}`);
+  console.log("✅ Categories synced.");
 
-  // Очищаем устаревшие офферы
-  const incomingOfferIds = offers.map(o => parseInt(o.$.id));
-  const existingOffers = await prisma.offer.findMany({ select: { id: true } });
-  const existingIds = existingOffers.map(o => o.id);
+  // 4. Обработка офферов батчами
+  console.log(
+    `💾 Saving ${offers.length} offers in batches of ${BATCH_SIZE}...`
+  );
+  for (let i = 0; i < offers.length; i += BATCH_SIZE) {
+    const batch = offers.slice(i, i + BATCH_SIZE);
 
-  const toDelete = existingIds.filter(id => !incomingOfferIds.includes(id));
-  if (toDelete.length) {
-    console.log(`🗑️ Removing ${toDelete.length} old offers...`);
-    await prisma.picture.deleteMany({ where: { offerId: { in: toDelete } } });
-    await prisma.param.deleteMany({ where: { offerId: { in: toDelete } } });
-    await prisma.offer.deleteMany({ where: { id: { in: toDelete } } });
-    console.log(`🧹 Old offers removed.`);
-  } else {
-    console.log("ℹ️ No old offers to delete.");
-  }
+    await Promise.all(
+      batch.map(async offer => {
+        const id = parseInt(offer.$.id);
+        const categoryId = parseInt(offer.categoryId);
 
-  console.log(`💾 Saving ${offers.length} offers...`);
-  for (const offer of offers) {
-    const id = parseInt(offer.$.id);
-    console.log(`➡️ Processing offer ID: ${id}...`);
+        if (isNaN(categoryId)) {
+          console.warn(
+            `⚠️ Skipping offer ID ${id} due to invalid categoryId:`,
+            offer.categoryId
+          );
+          return; // Пропускаем оффер без валидной категории
+        }
 
-    await prisma.param.deleteMany({ where: { offerId: id } });
-    await prisma.picture.deleteMany({ where: { offerId: id } });
+        await prisma.offer.upsert({
+          where: { id },
+          update: {
+            name: offer.name,
+            nameUa: offer.name_ua,
+            price: parseFloat(offer.price),
+            currencyId: offer.currencyId,
+            vendor: offer.vendor,
+            barcode: offer.barcode,
+            description: offer.description,
+            descriptionUa: offer.description_ua,
+            ean: offer.EAN,
+            quantityInStock: parseInt(offer.quantity_in_stock || "0"),
+            categoryId,
+          },
+          create: {
+            id,
+            name: offer.name,
+            nameUa: offer.name_ua,
+            price: parseFloat(offer.price),
+            currencyId: offer.currencyId,
+            vendor: offer.vendor,
+            barcode: offer.barcode,
+            description: offer.description,
+            descriptionUa: offer.description_ua,
+            ean: offer.EAN,
+            quantityInStock: parseInt(offer.quantity_in_stock || "0"),
+            categoryId,
+          },
+        });
 
-    await prisma.offer.upsert({
-      where: { id },
-      update: {
-        name: offer.name,
-        nameUa: offer.name_ua,
-        price: parseFloat(offer.price),
-        currencyId: offer.currencyId,
-        vendor: offer.vendor,
-        barcode: offer.barcode,
-        description: offer.description,
-        descriptionUa: offer.description_ua,
-        ean: offer.EAN,
-        quantityInStock: parseInt(offer.quantity_in_stock || "0"),
-        categoryId: parseInt(offer.categoryId),
-      },
-      create: {
-        id,
-        name: offer.name,
-        nameUa: offer.name_ua,
-        price: parseFloat(offer.price),
-        currencyId: offer.currencyId,
-        vendor: offer.vendor,
-        barcode: offer.barcode,
-        description: offer.description,
-        descriptionUa: offer.description_ua,
-        ean: offer.EAN,
-        quantityInStock: parseInt(offer.quantity_in_stock || "0"),
-        categoryId: parseInt(offer.categoryId),
-      },
-    });
+        const params = Array.isArray(offer.param) ? offer.param : [offer.param];
+        for (const p of params) {
+          if (!p?.$?.name || !p._) continue;
+          await prisma.param.create({
+            data: {
+              name: p.$.name,
+              value: p._,
+              offerId: id,
+            },
+          });
+        }
 
-    const params = Array.isArray(offer.param) ? offer.param : [offer.param];
-    let paramCount = 0;
-    for (const p of params) {
-      if (!p?.$?.name || !p._) continue;
-      await prisma.param.create({
-        data: {
-          name: p.$.name,
-          value: p._,
-          offerId: id,
-        },
-      });
-      paramCount++;
-    }
-
-    const pictures = Array.isArray(offer.picture)
-      ? offer.picture
-      : [offer.picture];
-    let pictureCount = 0;
-    for (const url of pictures.filter(Boolean)) {
-      await prisma.picture.create({
-        data: {
-          url,
-          offerId: id,
-        },
-      });
-      pictureCount++;
-    }
-
-    console.log(
-      `✅ Offer ${id} saved with ${paramCount} params and ${pictureCount} pictures.`
+        const pictures = Array.isArray(offer.picture)
+          ? offer.picture
+          : [offer.picture];
+        for (const url of pictures.filter(Boolean)) {
+          await prisma.picture.create({
+            data: {
+              url,
+              offerId: id,
+            },
+          });
+        }
+      })
     );
+
+    const done = Math.min(i + BATCH_SIZE, offers.length);
+    const percent = Math.floor((done / offers.length) * 100);
+    console.log(`📦 Offers progress: ${done}/${offers.length} (${percent}%)`);
   }
 
   console.log("🎉 XML sync complete.");
